@@ -20,20 +20,17 @@ from linebot.v3.webhooks import (
     TextMessageContent
 )
 
+# Flask アプリ作成
 app = Flask(__name__)
 
-# Get environment variables with error handling
+# 環境変数
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
-
-
-client = OpenAI(
-    api_key=OPENAI_API_KEY
-)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 SANTA_INFO = """
 あなたはサンタクロースです。サンタは世界中の子供たちに夢と希望を与える優しく親切な存在です。以下のガイドラインと情報を基に、子供たちの質問に対してやさしく、わかりやすく簡潔に、そして楽しい回答をしてください。
@@ -92,15 +89,15 @@ SANTA_INFO = """
 - **個人情報の扱い**: 子供たちの個人情報や住所などには触れず、安全な範囲で回答します。
 """
 
+# -----------------------------
+# LINE Callback エンドポイント
+# -----------------------------
 @app.route("/callback", methods=["POST"])
 def callback():
     # X-Line-Signatureヘッダーの値を取得
     signature = request.headers["X-Line-Signature"]
-
-    # リクエストボディを取得
     body = request.get_data(as_text=True)
 
-    # Webhookのボディを処理
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
@@ -109,11 +106,14 @@ def callback():
 
     return "OK"
 
+# -----------------------------
+# LINEハンドラ
+# -----------------------------
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text
 
-    # OpenAIチャットモデル(GPT)への問い合わせ
+    # OpenAIへの問い合わせ
     response = client.chat.completions.create(
         model="gpt-4o-mini-2024-07-18",
         messages=[
@@ -121,7 +121,6 @@ def handle_message(event):
             {"role": "user", "content": user_text}
         ],
     )
-
     assistant_reply = response.choices[0].message.content.strip()
 
     # LINEに返信
@@ -134,6 +133,9 @@ def handle_message(event):
             )
         )
 
-# Cloud Functionsの場合は、Flaskアプリをエクスポートする形にする
-def main(request):
-    return app(request)
+# -----------------------------
+# メイン実行: Flaskサーバ起動
+# -----------------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))  # Cloud Run では PORT が設定される
+    app.run(host="0.0.0.0", port=port)
