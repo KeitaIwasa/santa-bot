@@ -136,9 +136,12 @@ def handle_message(event):
             {"role": "system", "content": SANTA_INFO},
             {"role": "user", "content": user_text}
         ],
+        max_tokens=300,
     )
     assistant_reply = response.choices[0].message.content.strip()
-
+    # 「**」を取り除く
+    assistant_reply = assistant_reply.replace('**', '')
+    
     # LINEに返信
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
