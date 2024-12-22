@@ -136,20 +136,7 @@ def handle_message(event):
         user_text = event.message.text
 
         # ---------------------------------------------------
-        # 1) ユーザの発話をスプレッドシートに保存（action=save）
-        # ---------------------------------------------------
-        try:
-            requests.post(GAS_WEBAPP_URL, json={
-                "action": "save",
-                "userId": user_id,
-                "role": "user",
-                "message": user_text
-            })
-        except requests.exceptions.RequestException as e:
-            app.logger.error(f"Failed to save user message to GAS: {str(e)}")
-
-        # ---------------------------------------------------
-        # 2) 直近の会話履歴(会話の往復数はGAS側で指定)をGASから取得（action=get）
+        # 1) 直近の会話履歴(会話の往復数はGAS側で指定)をGASから取得（action=get）
         # ---------------------------------------------------
         try:
             res = requests.post(GAS_WEBAPP_URL, json={
@@ -169,7 +156,7 @@ def handle_message(event):
             recent_messages = []
 
         # ---------------------------------------------------
-        # 3) OpenAIに送るmessagesを組み立てる
+        # 2) OpenAIに送るmessagesを組み立てる
         #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
         # ---------------------------------------------------
         messages_for_openai = [
@@ -177,9 +164,6 @@ def handle_message(event):
         ] + recent_messages + [
             {"role": "user", "content": user_text},
         ]
-        
-        # ログ出力
-        app.logger.info(f"Messages for OpenAI: {messages_for_openai}")
 
         # OpenAIへの問い合わせ
         try:
@@ -195,7 +179,7 @@ def handle_message(event):
             assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
 
         # ---------------------------------------------------
-        # 4) アシスタントの返信をスプレッドシートに保存
+        # 3) アシスタントの返信をスプレッドシートに保存
         # ---------------------------------------------------
         try:
             requests.post(GAS_WEBAPP_URL, json={
@@ -208,7 +192,7 @@ def handle_message(event):
             app.logger.error(f"Failed to save assistant reply to GAS: {str(e)}")
 
         # ---------------------------------------------------
-        # 5) LINEに返信
+        # 4) LINEに返信
         # ---------------------------------------------------
         try:
             with ApiClient(configuration) as api_client:
@@ -221,6 +205,19 @@ def handle_message(event):
                 )
         except Exception as e:
             app.logger.error(f"LINE API error: {str(e)}")
+        
+        # ---------------------------------------------------
+        # 5) ユーザの発話をスプレッドシートに保存（action=save）
+        # ---------------------------------------------------
+        try:
+            requests.post(GAS_WEBAPP_URL, json={
+                "action": "save",
+                "userId": user_id,
+                "role": "user",
+                "message": user_text
+            })
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Failed to save user message to GAS: {str(e)}")
 
     except Exception as e:
         app.logger.error(f"Unexpected error in handle_message: {str(e)}")
