@@ -174,20 +174,7 @@ def handle_message(event):
             app.logger.error(f"Failed to save user message to GAS: {str(e)}")
 
         # ---------------------------------------------------
-        # 3) アシスタントの返信をスプレッドシートに保存
-        # ---------------------------------------------------
-        try:
-            requests.post(GAS_WEBAPP_URL, json={
-                "action": "save",
-                "userId": user_id,
-                "role": "assistant",
-                "message": assistant_reply
-            })
-        except requests.exceptions.RequestException as e:
-            app.logger.error(f"Failed to save assistant reply to GAS: {str(e)}")
-
-        # ---------------------------------------------------
-        # 4) OpenAIに送るmessagesを組み立てる
+        # 3) OpenAIに送るmessagesを組み立てる
         #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
         # ---------------------------------------------------
         messages_for_openai = [
@@ -208,6 +195,19 @@ def handle_message(event):
         except Exception as e:
             app.logger.error(f"OpenAI API error: {str(e)}")
             assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
+
+        # ---------------------------------------------------
+        # 4) アシスタントの返信をスプレッドシートに保存
+        # ---------------------------------------------------
+        try:
+            requests.post(GAS_WEBAPP_URL, json={
+                "action": "save",
+                "userId": user_id,
+                "role": "assistant",
+                "message": assistant_reply
+            })
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Failed to save assistant reply to GAS: {str(e)}")
 
         # ---------------------------------------------------
         # 5) LINEに返信
