@@ -149,7 +149,7 @@ def handle_message(event):
             app.logger.error(f"Failed to save user message to GAS: {str(e)}")
 
         # ---------------------------------------------------
-        # 2) 直近の会話履歴(3往復分)をGASから取得（action=get）
+        # 2) 直近の会話履歴(会話の往復数はGAS側で指定)をGASから取得（action=get）
         # ---------------------------------------------------
         try:
             res = requests.post(GAS_WEBAPP_URL, json={
@@ -189,7 +189,7 @@ def handle_message(event):
             assistant_reply = assistant_reply.replace('**', '')
         except Exception as e:
             app.logger.error(f"OpenAI API error: {str(e)}")
-            assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またとで連絡してね！ごめんね。"
+            assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
 
         # ---------------------------------------------------
         # 4) アシスタントの返信をスプレッドシートに保存
