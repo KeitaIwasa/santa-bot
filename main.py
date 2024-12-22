@@ -177,6 +177,9 @@ def handle_message(event):
         ] + recent_messages + [
             {"role": "user", "content": user_text},
         ]
+        
+        # ログ出力
+        app.logger.info(f"Messages for OpenAI: {messages_for_openai}")
 
         # OpenAIへの問い合わせ
         try:
