@@ -1,6 +1,7 @@
 import os
 from openai import OpenAI
 from flask import Flask, request, abort
+import requests
 
 from linebot.v3 import (
     WebhookHandler
@@ -27,6 +28,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+GAS_WEBAPP_URL = os.environ.get("GAS_WEBAPP_URL")
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -129,22 +131,70 @@ def callback():
 # -----------------------------
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    user_id = event.source.user_id  # LINEユーザごとのIDが取得できる
     user_text = event.message.text
+
+    # ---------------------------------------------------
+    # 1) ユーザの発話をスプレッドシートに保存（action=save）
+    # ---------------------------------------------------
+    requests.post(GAS_WEBAPP_URL, json={
+        "action": "save",
+        "userId": user_id,
+        "role": "user",
+        "message": user_text
+    })
+
+    # ---------------------------------------------------
+    # 2) 直近の会話履歴(3往復分)をGASから取得（action=get）
+    # ---------------------------------------------------
+    res = requests.post(GAS_WEBAPP_URL, json={
+        "action": "get",
+        "userId": user_id
+    })
+    if res.status_code == 200:
+        data = res.json()
+        if data["status"] == "ok":
+            # getで返ってきたmessagesを追加する
+            recent_messages = data["messages"]
+        else:
+            # もし会話履歴が取れなければ空に
+            recent_messages = []
+    else:
+        recent_messages = []
+
+    # ---------------------------------------------------
+    # 3) OpenAIに送るmessagesを組み立てる
+    #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
+    # ---------------------------------------------------
+    messages_for_openai = [
+        {"role": "system", "content": SANTA_INFO},
+    ] + recent_messages + [
+        {"role": "user", "content": user_text},
+    ]
 
     # OpenAIへの問い合わせ
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": SANTA_INFO},
-            {"role": "user", "content": user_text}
-        ],
+        messages=messages_for_openai,
         max_tokens=300,
     )
+
     assistant_reply = response.choices[0].message.content.strip()
-    # 「**」を取り除く
     assistant_reply = assistant_reply.replace('**', '')
-    
-    # LINEに返信
+
+    # ---------------------------------------------------
+    # 4) アシスタントの返信をスプレッドシートに保存
+    # ---------------------------------------------------
+    requests.post(GAS_WEBAPP_URL, json={
+        "action": "save",
+        "userId": user_id,
+        "role": "assistant",
+        "message": assistant_reply
+    })
+
+    # ---------------------------------------------------
+    # 5) LINEに返信
+    # ---------------------------------------------------
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
@@ -153,7 +203,6 @@ def handle_message(event):
                 messages=[TextMessage(text=assistant_reply)]
             )
         )
-
 # -----------------------------
 # メイン実行: Flaskサーバ起動
 # -----------------------------
