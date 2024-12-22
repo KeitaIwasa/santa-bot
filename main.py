@@ -131,78 +131,98 @@ def callback():
 # -----------------------------
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    user_id = event.source.user_id  # LINEユーザごとのIDが取得できる
-    user_text = event.message.text
+    try:
+        user_id = event.source.user_id  # LINEユーザごとのIDが取得できる
+        user_text = event.message.text
 
-    # ---------------------------------------------------
-    # 1) ユーザの発話をスプレッドシートに保存（action=save）
-    # ---------------------------------------------------
-    requests.post(GAS_WEBAPP_URL, json={
-        "action": "save",
-        "userId": user_id,
-        "role": "user",
-        "message": user_text
-    })
+        # ---------------------------------------------------
+        # 1) ユーザの発話をスプレッドシートに保存（action=save）
+        # ---------------------------------------------------
+        try:
+            requests.post(GAS_WEBAPP_URL, json={
+                "action": "save",
+                "userId": user_id,
+                "role": "user",
+                "message": user_text
+            })
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Failed to save user message to GAS: {str(e)}")
 
-    # ---------------------------------------------------
-    # 2) 直近の会話履歴(3往復分)をGASから取得（action=get）
-    # ---------------------------------------------------
-    res = requests.post(GAS_WEBAPP_URL, json={
-        "action": "get",
-        "userId": user_id
-    })
-    if res.status_code == 200:
-        data = res.json()
-        if data["status"] == "ok":
-            # getで返ってきたmessagesを追加する
-            recent_messages = data["messages"]
-        else:
-            # もし会話履歴が取れなければ空に
+        # ---------------------------------------------------
+        # 2) 直近の会話履歴(3往復分)をGASから取得（action=get）
+        # ---------------------------------------------------
+        try:
+            res = requests.post(GAS_WEBAPP_URL, json={
+                "action": "get",
+                "userId": user_id
+            })
+            res.raise_for_status()
+            data = res.json()
+            if data["status"] == "ok":
+                # getで返ってきたmessagesを追加する
+                recent_messages = data["messages"]
+            else:
+                # もし会話履歴が取れなければ空に
+                recent_messages = []
+        except (requests.exceptions.RequestException, ValueError) as e:
+            app.logger.error(f"Failed to get messages from GAS: {str(e)}")
             recent_messages = []
-    else:
-        recent_messages = []
 
-    # ---------------------------------------------------
-    # 3) OpenAIに送るmessagesを組み立てる
-    #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
-    # ---------------------------------------------------
-    messages_for_openai = [
-        {"role": "system", "content": SANTA_INFO},
-    ] + recent_messages + [
-        {"role": "user", "content": user_text},
-    ]
+        # ---------------------------------------------------
+        # 3) OpenAIに送るmessagesを組み立てる
+        #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
+        # ---------------------------------------------------
+        messages_for_openai = [
+            {"role": "system", "content": SANTA_INFO},
+        ] + recent_messages + [
+            {"role": "user", "content": user_text},
+        ]
 
-    # OpenAIへの問い合わせ
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages_for_openai,
-        max_tokens=300,
-    )
-
-    assistant_reply = response.choices[0].message.content.strip()
-    assistant_reply = assistant_reply.replace('**', '')
-
-    # ---------------------------------------------------
-    # 4) アシスタントの返信をスプレッドシートに保存
-    # ---------------------------------------------------
-    requests.post(GAS_WEBAPP_URL, json={
-        "action": "save",
-        "userId": user_id,
-        "role": "assistant",
-        "message": assistant_reply
-    })
-
-    # ---------------------------------------------------
-    # 5) LINEに返信
-    # ---------------------------------------------------
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message_with_http_info(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=assistant_reply)]
+        # OpenAIへの問い合わせ
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages_for_openai,
+                max_tokens=300,
             )
-        )
+            assistant_reply = response.choices[0].message.content.strip()
+            assistant_reply = assistant_reply.replace('**', '')
+        except Exception as e:
+            app.logger.error(f"OpenAI API error: {str(e)}")
+            assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またとで連絡してね！ごめんね。"
+
+        # ---------------------------------------------------
+        # 4) アシスタントの返信をスプレッドシートに保存
+        # ---------------------------------------------------
+        try:
+            requests.post(GAS_WEBAPP_URL, json={
+                "action": "save",
+                "userId": user_id,
+                "role": "assistant",
+                "message": assistant_reply
+            })
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Failed to save assistant reply to GAS: {str(e)}")
+
+        # ---------------------------------------------------
+        # 5) LINEに返信
+        # ---------------------------------------------------
+        try:
+            with ApiClient(configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                line_bot_api.reply_message_with_http_info(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=assistant_reply)]
+                    )
+                )
+        except Exception as e:
+            app.logger.error(f"LINE API error: {str(e)}")
+
+    except Exception as e:
+        app.logger.error(f"Unexpected error in handle_message: {str(e)}")
+        abort(500)
+
 # -----------------------------
 # メイン実行: Flaskサーバ起動
 # -----------------------------
