@@ -197,20 +197,7 @@ def handle_message(event):
             assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
 
         # ---------------------------------------------------
-        # 4) アシスタントの返信をスプレッドシートに保存
-        # ---------------------------------------------------
-        try:
-            requests.post(GAS_WEBAPP_URL, json={
-                "action": "save",
-                "userId": user_id,
-                "role": "assistant",
-                "message": assistant_reply
-            })
-        except requests.exceptions.RequestException as e:
-            app.logger.error(f"Failed to save assistant reply to GAS: {str(e)}")
-
-        # ---------------------------------------------------
-        # 5) LINEに返信
+        # 4) LINEに返信
         # ---------------------------------------------------
         try:
             with ApiClient(configuration) as api_client:
@@ -223,6 +210,19 @@ def handle_message(event):
                 )
         except Exception as e:
             app.logger.error(f"LINE API error: {str(e)}")
+
+        # ---------------------------------------------------
+        # 5) アシスタントの返信をスプレッドシートに保存
+        # ---------------------------------------------------
+        try:
+            requests.post(GAS_WEBAPP_URL, json={
+                "action": "save",
+                "userId": user_id,
+                "role": "assistant",
+                "message": assistant_reply
+            })
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Failed to save assistant reply to GAS: {str(e)}")
 
     except Exception as e:
         app.logger.error(f"Unexpected error in handle_message: {str(e)}")
