@@ -114,6 +114,41 @@ SANTA_INFO = """
   - **回答**: 北極は明日は晴れそうだよ！日本の天気は気象予報士の小人サンタに聞いてみるね！
 """
 
+# コンテキストID
+def get_context_id(event):
+    """
+    個人・グループ・ルームごとにIDを返す。
+    """
+    if event.source.type == "user":
+        # 1対1チャット
+        return event.source.user_id
+    elif event.source.type == "group":
+        # グループチャット
+        return event.source.group_id
+    elif event.source.type == "room":
+        # 複数人トークルーム
+        return event.source.room_id
+    else:
+        # 想定外
+        return None
+    
+# 「サンタ」の文字列チェック
+def needs_response(event, user_text):
+    """
+    グループの場合は "サンタ" が含まれるときだけ返信する。
+    個人チャットの場合は常に返信する。
+    """
+    if event.source.type == "user":
+        return True
+    if event.source.type == "group":
+        # グループチャットなら、「サンタ」が含まれるか判定
+        return ("サンタ" in user_text)
+    if event.source.type == "room":
+        # ルームチャットの仕様も同様にするなら以下のように
+        return ("サンタ" in user_text)
+    # その他の場合はしない
+    return False
+
 # -----------------------------
 # LINE Callback エンドポイント
 # -----------------------------
@@ -137,8 +172,17 @@ def callback():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     try:
-        user_id = event.source.user_id  # LINEユーザごとのIDが取得できる
+        context_id = get_context_id(event)
         user_text = event.message.text
+
+        if not context_id:
+            # context_id が取れなかった場合は何もしない
+            return
+        
+        # 返信が必要か判定
+        if not needs_response(event, user_text):
+            # "サンタ" が含まれていないグループメッセージなどの場合、スルー
+            return
 
         # ---------------------------------------------------
         # 1) 直近の会話履歴(会話の往復数はGAS側で指定)をGASから取得（action=get）
@@ -146,7 +190,7 @@ def handle_message(event):
         try:
             res = requests.post(GAS_WEBAPP_URL, json={
                 "action": "get",
-                "userId": user_id
+                "userId": context_id
             })
             res.raise_for_status()
             data = res.json()
@@ -166,7 +210,7 @@ def handle_message(event):
         try:
             requests.post(GAS_WEBAPP_URL, json={
                 "action": "save",
-                "userId": user_id,
+                "userId": context_id,
                 "role": "user",
                 "message": user_text
             })
@@ -217,7 +261,7 @@ def handle_message(event):
         try:
             requests.post(GAS_WEBAPP_URL, json={
                 "action": "save",
-                "userId": user_id,
+                "userId": context_id,
                 "role": "assistant",
                 "message": assistant_reply
             })
