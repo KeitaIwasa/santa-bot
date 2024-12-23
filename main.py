@@ -34,8 +34,25 @@ configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-SANTA_INFO = """
-あなたはサンタクロースです。サンタは世界中の子供たちに夢と希望を与える優しく親切な存在です。以下のガイドラインと情報を基に、子供たちの質問に対してやさしく、簡潔に、そしてユーモラスな回答をしてください。
+def pronoun(event):
+    """
+    ユーザのタイプに応じて、適切な代名詞を返す。
+    """
+    if event.source.type == "user":
+        pronoun = "君"
+        group_instruction = ""
+    else:
+        pronoun = "君たち"
+        group_instruction = "複数人に対する会話を想定し、二人称は「君たち」としなさい。"
+    return pronoun, group_instruction
+
+def get_santa_info(event):
+    """
+    ユーザのコンテキストに応じたサンタの情報を返す。
+    """
+    user_pronoun, group_inst = pronoun(event)
+    return f"""
+あなたはサンタクロースです。サンタは世界中の子供たちに夢と希望を与える優しく親切な存在です。以下のガイドラインと情報を基に、子供たちの質問に対してやさしく、簡潔に、そしてユーモラスな回答をしてください。{group_inst}
 
 #### **基本情報**
 1. **名前**: サンタクロース（本名: ニコラウス・クラウス・ノエル）
@@ -97,9 +114,9 @@ SANTA_INFO = """
 2. **質問**: どうやってプレゼントを配るの？
   - **回答**: 私はクリスマスイブの夜に、そりに乗ってトナカイたちと一緒に空を飛ぶんだ！🦌✨そして、家の煙突から入ったりして、子どもたちへのプレゼントを置いてくるよ🎁
 3. **質問**: サンタさんは本当にいるの？
-  - **回答**: ほっほっほ！もちろんサンタクロースは本当にいるよ。君が信じていてくれるかぎり、毎年プレゼントをとどけるよ🎁
+  - **回答**: ほっほっほ！もちろんサンタクロースは本当にいるよ。{user_pronoun}が信じていてくれるかぎり、毎年プレゼントをとどけるよ🎁
 4. **質問**: サンタさんは親なの？
-  - **回答**: ほっほっほ！私は君のパパじゃないよ。でもじつは、パパやママはサンタの大切な協力者なんだ。君たちの手紙を送ってくれたり、クリスマスイブには君たちを寝かしつけてくれたり、毎年たくさんの助けをしてくれて、感謝しているんだ🙏
+  - **回答**: ほっほっほ！私は{user_pronoun}のパパじゃないよ。でもじつは、パパやママはサンタの大切な協力者なんだ。君たちの手紙を送ってくれたり、クリスマスイブには君たちを寝かしつけてくれたり、毎年たくさんの助けをしてくれて、感謝しているんだ🙏
 5. **質問**: 好きな食べ物は？
   - **回答**: 私の大好きな食べ物はクッキーとホットチョコレートだよ🍪☕️ クリスマスイブには、子どもたちが用意してくれるおいしいクッキーを楽しみにしているんだ！大きめのクッキーをおいてくれるとうれしいな！ほっほっほ！
 6. **質問**: サンタさんは何歳？
@@ -113,6 +130,39 @@ SANTA_INFO = """
 10. **質問**: 明日の天気は？
   - **回答**: 北極は明日は晴れそうだよ！日本の天気は気象予報士の小人サンタに聞いてみるね！
 """
+
+# コンテキストID
+def get_context_id(event):
+    """
+    個人・グループ・ルームごとにIDを返す。
+    """
+    if event.source.type == "user":
+        # 1対1チャット
+        return event.source.user_id
+    elif event.source.type == "group":
+        # グループチャット
+        return event.source.group_id
+    elif event.source.type == "room":
+        # 複数人トークルーム
+        return event.source.room_id
+    else:
+        # 想定外
+        return None
+    
+# 「サンタ」の文字列チェック
+def needs_response(event, user_text):
+    """
+    グループの場合は "サンタ" が含まれるときだけ返信する。
+    個人チャットの場合は常に返信する。
+    """
+    if event.source.type == "user":
+        return True
+    if event.source.type in ["group", "room"]:
+        # グループ/ルームチャットなら、サンタ関連のキーワードが含まれるか判定
+        keywords = ["サンタ", "さんた", "santa", "Santa", "SANTA", "クリスマス", "Christmas","Xmas", "トナカイ"]
+        return any(keyword in user_text for keyword in keywords)
+    # その他の場合はしない
+    return False
 
 # -----------------------------
 # LINE Callback エンドポイント
@@ -137,8 +187,17 @@ def callback():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     try:
-        user_id = event.source.user_id  # LINEユーザごとのIDが取得できる
+        context_id = get_context_id(event)
         user_text = event.message.text
+
+        if not context_id:
+            # context_id が取れなかった場合は何もしない
+            return
+        
+        # 返信が必要か判定
+        if not needs_response(event, user_text):
+            # "サンタ" が含まれていないグループメッセージなどの場合、スルー
+            return
 
         # ---------------------------------------------------
         # 1) 直近の会話履歴(会話の往復数はGAS側で指定)をGASから取得（action=get）
@@ -146,7 +205,7 @@ def handle_message(event):
         try:
             res = requests.post(GAS_WEBAPP_URL, json={
                 "action": "get",
-                "userId": user_id
+                "userId": context_id
             })
             res.raise_for_status()
             data = res.json()
@@ -166,7 +225,7 @@ def handle_message(event):
         try:
             requests.post(GAS_WEBAPP_URL, json={
                 "action": "save",
-                "userId": user_id,
+                "userId": context_id,
                 "role": "user",
                 "message": user_text
             })
@@ -177,8 +236,9 @@ def handle_message(event):
         # 3) OpenAIに送るmessagesを組み立てる
         #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
         # ---------------------------------------------------
+        santa_info = get_santa_info(event)
         messages_for_openai = [
-            {"role": "system", "content": SANTA_INFO},
+            {"role": "system", "content": santa_info},
         ] + recent_messages + [
             {"role": "user", "content": user_text},
         ]
@@ -217,7 +277,7 @@ def handle_message(event):
         try:
             requests.post(GAS_WEBAPP_URL, json={
                 "action": "save",
-                "userId": user_id,
+                "userId": context_id,
                 "role": "assistant",
                 "message": assistant_reply
             })
