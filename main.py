@@ -169,7 +169,7 @@ def needs_response(event, user_text):
         return True
     if event.source.type in ["group", "room"]:
         # グループ/ルームチャットなら、サンタ関連のキーワードが含まれるか判定
-        keywords = ["サンタ", "さんた", "santa", "Santa", "SANTA", "クリスマス", "Christmas","Xmas", "トナカイ"]
+        keywords = ["サンタ", "さんた", "santa", "Santa", "SANTA", "クリスマス", "Christmas","Xmas", "トナカイ", "ニコラウス", "nicolas"]
         return any(keyword in user_text for keyword in keywords)
     # その他の場合はしない
     return False
