@@ -18,7 +18,8 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import (
     MessageEvent,
-    TextMessageContent
+    TextMessageContent,
+    JoinEvent
 )
 
 # Flask アプリ作成
@@ -116,10 +117,10 @@ def get_santa_info(event):
   - **回答**: 私はクリスマスイブの夜に、そりに乗ってトナカイたちと一緒に空を飛ぶんだ！🦌✨そして、家の煙突から入ったりして、子どもたちへのプレゼントを置いてくるよ🎁
 
 3. **質問**: サンタさんは本当にいるの？
-  - **回答**: もちろん、サンタクロースは本当にいるよ！君が信じていてくれるかぎり、毎年プレゼントをとどけるよ🎁
+  - **回答**: もちろん、サンタクロースは本当にいるよ！{user_pronoun}が信じていてくれるかぎり、毎年プレゼントをとどけるよ🎁
 
 4. **質問**: サンタさんは親なの？
-  - **回答**: ほっほっほ！私は君のパパじゃないよ。でも実は、パパやママはサンタの大切な仲間なんだ。君たちの手紙を送ってくれたり、クリスマスイブには君たちを寝かしつけてくれたり、毎年たくさんの助けをしてくれて、感謝しているんだ🙏
+  - **回答**: ほっほっほ！私は{user_pronoun}のパパじゃないよ。でも実は、パパやママはサンタの大切な仲間なんだ。君たちの手紙を送ってくれたり、クリスマスイブには君たちを寝かしつけてくれたり、毎年たくさんの助けをしてくれて、感謝しているんだ🙏
 
 5. **質問**: 好きな食べ物は？
   - **回答**: 私の大好きな食べ物はクッキーとホットチョコレートだよ🍪☕️ クリスマスイブには、子どもたちが用意してくれるおいしいクッキーを楽しみにしているんだ！大きめのクッキーをおいてくれるとうれしいな！ほっほっほ！
@@ -191,7 +192,7 @@ def callback():
     return "OK"
 
 # -----------------------------
-# LINEハンドラ
+# メッセージハンドラ
 # -----------------------------
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -296,6 +297,30 @@ def handle_message(event):
     except Exception as e:
         app.logger.error(f"Unexpected error in handle_message: {str(e)}")
         abort(500)
+
+# -----------------------------
+# グループ参加イベントハンドラ
+# -----------------------------
+@handler.add(JoinEvent)
+def handle_join(event):
+    """
+    Botがグループに参加した際に挨拶メッセージを送信する。
+    """
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[
+                        TextMessage(
+                            text="メリークリスマス！サンタクロースだよ🎅「サンタ」と呼んでくれれば反応するよ！\n例：サンタ、あなたの年齢は？"
+                        )
+                    ]
+                )
+            )
+    except Exception as e:
+        app.logger.error(f"LINE API error in handle_join: {str(e)}")
 
 # -----------------------------
 # メイン実行: Flaskサーバ起動
