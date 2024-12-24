@@ -314,7 +314,7 @@ def handle_join(event):
                     reply_token=event.reply_token,
                     messages=[
                         TextMessage(
-                            text="メリークリスマス！サンタクロースだよ🎅「サンタ」と呼んでくれれば反応するよ！\n例：サンタ、あなたの年齢は？"
+                            text="メリークリスマス🎄🫎💫\nサンタクロースだよ🎅\n「サンタ」と呼んでくれれば反応するよ！\n\n例：サンタ、あなたの年齢は？"
                         )
                     ]
                 )
