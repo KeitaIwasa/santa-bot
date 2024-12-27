@@ -233,17 +233,26 @@ def handle_message(event):
             recent_messages = []
 
         # ---------------------------------------------------
-        # 2) ユーザの発話をスプレッドシートに保存（action=save）
+        # 2) ユーザの発話・サンタの返信をスプレッドシートに保存（action=save）
         # ---------------------------------------------------
         try:
-            requests.post(GAS_WEBAPP_URL, json={
+            messages = [
+            {
                 "action": "save",
                 "userId": context_id,
                 "role": "user",
                 "message": user_text
-            })
+            },
+            {
+                "action": "save",
+                "userId": context_id,
+                "role": "assistant",
+                "message": assistant_reply
+            }
+            ]
+            requests.post(GAS_WEBAPP_URL, json=messages)
         except requests.exceptions.RequestException as e:
-            app.logger.error(f"Failed to save user message to GAS: {str(e)}")
+            app.logger.error(f"Failed to save messages to GAS: {str(e)}")
 
         # ---------------------------------------------------
         # 3) OpenAIに送るmessagesを組み立てる
@@ -283,19 +292,6 @@ def handle_message(event):
                 )
         except Exception as e:
             app.logger.error(f"LINE API error: {str(e)}")
-
-        # ---------------------------------------------------
-        # 5) アシスタントの返信をスプレッドシートに保存
-        # ---------------------------------------------------
-        try:
-            requests.post(GAS_WEBAPP_URL, json={
-                "action": "save",
-                "userId": context_id,
-                "role": "assistant",
-                "message": assistant_reply
-            })
-        except requests.exceptions.RequestException as e:
-            app.logger.error(f"Failed to save assistant reply to GAS: {str(e)}")
 
     except Exception as e:
         app.logger.error(f"Unexpected error in handle_message: {str(e)}")
