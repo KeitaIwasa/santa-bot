@@ -257,12 +257,7 @@ def handle_message(event):
             recent_messages = []
 
         # ---------------------------------------------------
-        # 2) ユーザの発話・サンタの返信をスプレッドシートに保存（action=save）
-        # ---------------------------------------------------
-        threading.Thread(target=save_messages, args=(context_id, user_text, assistant_reply)).start()
-
-        # ---------------------------------------------------
-        # 3) OpenAIに送るmessagesを組み立てる
+        # 2) OpenAIに送るmessagesを組み立てる
         #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
         # ---------------------------------------------------
         santa_info = get_santa_info(event)
@@ -284,6 +279,11 @@ def handle_message(event):
         except Exception as e:
             app.logger.error(f"OpenAI API error: {str(e)}")
             assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
+        
+        # ---------------------------------------------------
+        # 3) ユーザの発話・サンタの返信をスプレッドシートに保存（action=save）
+        # ---------------------------------------------------
+        threading.Thread(target=save_messages, args=(context_id, user_text, assistant_reply)).start()
 
         # ---------------------------------------------------
         # 4) LINEに返信
