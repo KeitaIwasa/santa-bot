@@ -1,5 +1,4 @@
 import os
-import threading
 from openai import OpenAI
 from flask import Flask, request, abort
 import requests
@@ -178,26 +177,6 @@ def needs_response(event, user_text):
     # その他の場合はしない
     return False
 
-def save_messages(context_id, user_text, assistant_reply):
-    try:
-        messages = [
-            {
-                "action": "save",
-                "userId": context_id,
-                "role": "user",
-                "message": user_text
-            },
-            {
-                "action": "save",
-                "userId": context_id,
-                "role": "assistant",
-                "message": assistant_reply
-            }
-        ]
-        requests.post(GAS_WEBAPP_URL, json=messages)
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"Failed to save messages to GAS: {str(e)}")
-
 # -----------------------------
 # LINE Callback エンドポイント
 # -----------------------------
@@ -259,7 +238,24 @@ def handle_message(event):
         # ---------------------------------------------------
         # 2) ユーザの発話・サンタの返信をスプレッドシートに保存（action=save）
         # ---------------------------------------------------
-        threading.Thread(target=save_messages, args=(context_id, user_text, assistant_reply)).start()
+        try:
+            messages = [
+                {
+                    "action": "save",
+                    "userId": context_id,
+                    "role": "user",
+                    "message": user_text
+                },
+                {
+                    "action": "save",
+                    "userId": context_id,
+                    "role": "assistant",
+                    "message": assistant_reply
+                }
+            ]
+            requests.post(GAS_WEBAPP_URL, json=messages)
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Failed to save messages to GAS: {str(e)}")
 
         # ---------------------------------------------------
         # 3) OpenAIに送るmessagesを組み立てる
