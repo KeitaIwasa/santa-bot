@@ -163,7 +163,13 @@ def get_context_id(event):
         # 想定外
         return None
     
-# 「サンタ」の文字列チェック
+# キーワードをセットとして保持
+SANTA_KEYWORDS = {
+    "サンタ", "さんた", "santa", "Santa", "SANTA",
+    "クリスマス", "Christmas", "Xmas",
+    "トナカイ", "ニコラウス", "nicolas"
+}
+
 def needs_response(event, user_text):
     """
     グループの場合は "サンタ" が含まれるときだけ返信する。
@@ -173,8 +179,7 @@ def needs_response(event, user_text):
         return True
     if event.source.type in ["group", "room"]:
         # グループ/ルームチャットなら、サンタ関連のキーワードが含まれるか判定
-        keywords = ["サンタ", "さんた", "santa", "Santa", "SANTA", "クリスマス", "Christmas","Xmas", "トナカイ", "ニコラウス", "nicolas"]
-        return any(keyword in user_text for keyword in keywords)
+        return any(keyword in user_text for keyword in SANTA_KEYWORDS)
     # その他の場合はしない
     return False
 
