@@ -3,7 +3,6 @@ from openai import OpenAI
 from flask import Flask, request, abort
 import requests
 import datetime
-import concurrent.futures
 
 from linebot.v3 import (
     WebhookHandler
@@ -240,6 +239,10 @@ def handle_message(event):
             app.logger.error(f"Failed to get messages from GAS: {str(e)}")
             recent_messages = []
 
+        # ---------------------------------------------------
+        # 2) OpenAIに問い合わせる
+        #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
+        # ---------------------------------------------------
         santa_info = get_santa_info(event)
         messages_for_openai = [
             {"role": "system", "content": santa_info},
@@ -247,46 +250,21 @@ def handle_message(event):
             {"role": "user", "content": user_text},
         ]
 
-        def save_messages(assistant_reply):
-            try:
-                messages = [
-                    {
-                        "action": "save",
-                        "userId": context_id,
-                        "role": "user",
-                        "message": user_text
-                    },
-                    {
-                        "action": "save",
-                        "userId": context_id,
-                        "role": "assistant",
-                        "message": assistant_reply
-                    }
-                ]
-                requests.post(GAS_WEBAPP_URL, json=messages)
-            except requests.exceptions.RequestException as e:
-                app.logger.error(f"Failed to save messages to GAS: {str(e)}")
-
-        def query_openai():
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=messages_for_openai,
-                    max_tokens=300,
-                )
-                reply = response.choices[0].message.content.strip().replace('**', '')
-            except Exception as e:
-                app.logger.error(f"OpenAI API error: {str(e)}")
-                reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
-            return reply
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_reply = executor.submit(query_openai)
-            assistant_reply = future_reply.result()
-            executor.submit(save_messages, assistant_reply)
+        # OpenAIへの問い合わせ
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages_for_openai,
+                max_tokens=300,
+            )
+            assistant_reply = response.choices[0].message.content.strip()
+            assistant_reply = assistant_reply.replace('**', '')
+        except Exception as e:
+            app.logger.error(f"OpenAI API error: {str(e)}")
+            assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
 
         # ---------------------------------------------------
-        # 4) LINEに返信
+        # 3) LINEに返信
         # ---------------------------------------------------
         try:
             with ApiClient(configuration) as api_client:
@@ -299,6 +277,28 @@ def handle_message(event):
                 )
         except Exception as e:
             app.logger.error(f"LINE API error: {str(e)}")
+
+        # ---------------------------------------------------
+        # 4) ユーザの発話・サンタの返信をスプレッドシートに保存（action=save）
+        # ---------------------------------------------------
+        try:
+            messages = [
+            {
+                "action": "save",
+                "userId": context_id,
+                "role": "user",
+                "message": user_text
+            },
+            {
+                "action": "save",
+                "userId": context_id,
+                "role": "assistant",
+                "message": assistant_reply
+            }
+            ]
+            requests.post(GAS_WEBAPP_URL, json=messages)
+        except requests.exceptions.RequestException as e:
+            app.logger.error(f"Failed to save messages to GAS: {str(e)}")
 
     except Exception as e:
         app.logger.error(f"Unexpected error in handle_message: {str(e)}")
