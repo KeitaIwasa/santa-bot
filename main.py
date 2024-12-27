@@ -3,6 +3,7 @@ from openai import OpenAI
 from flask import Flask, request, abort
 import requests
 import datetime
+import concurrent.futures
 
 from linebot.v3 import (
     WebhookHandler
@@ -204,16 +205,13 @@ def handle_message(event):
         user_text = event.message.text
 
         if not context_id:
-            # context_id が取れなかった場合は何もしない
             return
-        
-        # 返信が必要か判定
+
         if not needs_response(event, user_text):
-            # "サンタ" が含まれていないグループメッセージなどの場合、スルー
             return
 
         # ---------------------------------------------------
-        # 1) 直近の会話履歴(会話の往復数はGAS側で指定)をGASから取得（action=get）
+        # 1) 直近の会話履歴をGASから取得（action=get）
         # ---------------------------------------------------
         try:
             res = requests.post(GAS_WEBAPP_URL, json={
@@ -223,41 +221,13 @@ def handle_message(event):
             res.raise_for_status()
             data = res.json()
             if data["status"] == "ok":
-                # getで返ってきたmessagesを追加する
                 recent_messages = data["messages"]
             else:
-                # もし会話履歴が取れなければ空に
                 recent_messages = []
         except (requests.exceptions.RequestException, ValueError) as e:
             app.logger.error(f"Failed to get messages from GAS: {str(e)}")
             recent_messages = []
 
-        # ---------------------------------------------------
-        # 2) ユーザの発話・サンタの返信をスプレッドシートに保存（action=save）
-        # ---------------------------------------------------
-        try:
-            messages = [
-            {
-                "action": "save",
-                "userId": context_id,
-                "role": "user",
-                "message": user_text
-            },
-            {
-                "action": "save",
-                "userId": context_id,
-                "role": "assistant",
-                "message": assistant_reply
-            }
-            ]
-            requests.post(GAS_WEBAPP_URL, json=messages)
-        except requests.exceptions.RequestException as e:
-            app.logger.error(f"Failed to save messages to GAS: {str(e)}")
-
-        # ---------------------------------------------------
-        # 3) OpenAIに送るmessagesを組み立てる
-        #    systemの指示(SANTA_INFO) + 直近会話履歴 + 今回のuser発話
-        # ---------------------------------------------------
         santa_info = get_santa_info(event)
         messages_for_openai = [
             {"role": "system", "content": santa_info},
@@ -265,18 +235,43 @@ def handle_message(event):
             {"role": "user", "content": user_text},
         ]
 
-        # OpenAIへの問い合わせ
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages_for_openai,
-                max_tokens=300,
-            )
-            assistant_reply = response.choices[0].message.content.strip()
-            assistant_reply = assistant_reply.replace('**', '')
-        except Exception as e:
-            app.logger.error(f"OpenAI API error: {str(e)}")
-            assistant_reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
+        def save_messages(assistant_reply):
+            try:
+                messages = [
+                    {
+                        "action": "save",
+                        "userId": context_id,
+                        "role": "user",
+                        "message": user_text
+                    },
+                    {
+                        "action": "save",
+                        "userId": context_id,
+                        "role": "assistant",
+                        "message": assistant_reply
+                    }
+                ]
+                requests.post(GAS_WEBAPP_URL, json=messages)
+            except requests.exceptions.RequestException as e:
+                app.logger.error(f"Failed to save messages to GAS: {str(e)}")
+
+        def query_openai():
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages_for_openai,
+                    max_tokens=300,
+                )
+                reply = response.choices[0].message.content.strip().replace('**', '')
+            except Exception as e:
+                app.logger.error(f"OpenAI API error: {str(e)}")
+                reply = "ちょっと今プレゼントの準備で忙しいから、またあとで連絡してね！ごめんね。"
+            return reply
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_reply = executor.submit(query_openai)
+            assistant_reply = future_reply.result()
+            executor.submit(save_messages, assistant_reply)
 
         # ---------------------------------------------------
         # 4) LINEに返信
