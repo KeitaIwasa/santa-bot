@@ -243,11 +243,14 @@ def handle_message(event):
             })
             res.raise_for_status()
             data = res.json()
-            if data["status"] == "ok":
-                # getで返ってきたmessagesを追加する
-                recent_messages = data["messages"]
+            # data は配列で返ってくるため、先頭要素を取り出す
+            if isinstance(data, list) and len(data) > 0:
+                item = data[0]  # 配列の先頭要素（要素は辞書形式）
+                if item.get("status") == "ok":
+                    recent_messages = item.get("messages", [])
+                else:
+                    recent_messages = []
             else:
-                # もし会話履歴が取れなければ空に
                 recent_messages = []
         except (requests.exceptions.RequestException, ValueError) as e:
             app.logger.error(f"Failed to get messages from GAS: {str(e)}")
